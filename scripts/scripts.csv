@@ -1,0 +1,3 @@
+"name","type","description"
+"invalid_objects.sql","SQL-STMT","The number of invalid objects per schema (sorted by schemaname)."
+"fra_usage_pct.sql","SQL-STMT","The current size of the fast-recovery-area and some usage information in percent."
