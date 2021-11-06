@@ -330,6 +330,19 @@ o query --file fra_usage_pct.sql --cdb all -u sys
   0 | CDB2  | 0               |        nan    |    nan    |                |                  |         |  nan
 ```
 
+You can even apply a custom filter ("-f2") and sort expressions ("-o"):
+```bash
+o query --file fra_usage_pct.sql --cdb all -u sys -f2 "total > 30"
+    | _db   | RECO_DEST_SIZE   |   ARCHIVELOGS |   BACKUPS |   IMAGE_COPIES |   FLASHBACK_LOGS |   OTHER |   TOTAL
+----+-------+------------------+---------------+-----------+----------------+------------------+---------+---------
+  0 | CDB1  | 8G               |         38.17 |      1.57 |              0 |                0 |       0 |   39.74
+```
+
+But this is only working, if you organize your SQL-statement to have a simple SELECT in the main part without
+any WHERE predicates or ORDER BY expressions. "o" just appends additional WHERE-conditions and/or ORDER BY
+expressions at the end of your SQL-statements (Any ";" is removed upfront.)
+Simple filters "(-f") do not work!
+
 **Currently "o" can only process sql-scripts that contain exactly 1 sql-statment.**
 
 Files containing multiple sql-statements or PL/SQL-blocks are not supported yet.

@@ -91,9 +91,9 @@ class blocks(_base_class.OraCommand):
         predicateString = super().predicateExpr(
             super().adjustCase_forColumnValues(self.ctx.filterExpr, ['OSUSER', 'MACHINE']))
         SQL = sqlStmt().format(predicateString, super().sortExpr(self.ctx.sortExpr))
+        super().printSQL(SQL)
 
         self.ctx.session.openConnection()
         df = pd.read_sql(SQL, con=self.ctx.session.connection)
-        
-        return df
 
+        return df

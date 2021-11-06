@@ -19,7 +19,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 
-g_VERSION = '0.4.0'
+g_VERSION = '0.4.2'
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.WARN)
 
@@ -127,11 +127,11 @@ def exec_command(par):
     try:
         df = par.cmd.execute()
         df.insert(loc=0, column='_db', value=par.db.name)
-        return [par.db, df]
+        return ['OK', par.db, df]
     except Exception as e:
         print("\n*** error executing command for database '{}'! ***".format(par.db.name))
         print("User is '{}', error message is: {}\n".format(par.usr.name, str(e)))
-        return [par.db, pd.DataFrame()]
+        return ['ERR', par.db, pd.DataFrame()]
 
 
 def run():
@@ -230,10 +230,10 @@ def run():
         df = []
         err = []
         for el in df_list:
-            if not el[1].empty:
-                df.append(el[1])
+            if el[0] == 'OK':
+                df.append(el[2])
             else:
-                err.append(el[0].name)
+                err.append(el[1].name)
 
         if len(df) == 0:
             print(

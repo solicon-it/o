@@ -6,6 +6,7 @@ from . import _base_class
 # E.g. column ISPDB_MODIFIABLE --> We would need further information from the database
 # (version, CDB/PDB) to decide, if we can use it ...
 
+
 def sqlStmt():
     return """
 select
@@ -35,6 +36,7 @@ where 1=1
   {}
 order by {}
 """
+
 
 def sqlStmt_sys():
     return """
@@ -89,11 +91,12 @@ class par(_base_class.OraCommand):
         super().__init__(ctx)
         self.cols = ['NUM', 'NAME', 'VALUE', 'DEFAULT', 'ISDEFAULT', 'SES_MODIFIABLE', 'SYS_MODIFIABLE', 'INST_MODIFIABLE',
                      'MODIFIED', 'ADJUSTED', 'DEPRECATED', 'BASIC', 'UPDATE_COMMENT', 'HIDDEN']
-    
+
     def execute(self):
         super().checkColNames(self.ctx.filterExpr)
 
-        predicateString = super().predicateExpr(super().adjustCase_forColumnValues(self.ctx.filterExpr, ['NAME']))
+        predicateString = super().predicateExpr(
+            super().adjustCase_forColumnValues(self.ctx.filterExpr, ['NAME']))
 
         # When we have a user with SYSDBA privs, we can directly access internal memory structures
         # to provide also information about hidden parameters.
@@ -101,10 +104,9 @@ class par(_base_class.OraCommand):
             SQL = sqlStmt_sys().format(predicateString, super().sortExpr(self.ctx.sortExpr))
         else:
             SQL = sqlStmt().format(predicateString, super().sortExpr(self.ctx.sortExpr))
+        super().printSQL(SQL)
 
         self.ctx.session.openConnection()
         df = pd.read_sql(SQL, con=self.ctx.session.connection)
 
         return df
-
-        
