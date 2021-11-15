@@ -5,6 +5,7 @@ exists inside databases and as sqlplus-scripts in combination with a customized 
 As a consequence there are some dependencies to enviroment-settings. This is mainly for
 convenience! But this program also works in "stand alone" mode without using ORAtk parts.
 
+
 ## An (incomplete) Featurelist
 
 ### Currently available
@@ -17,7 +18,7 @@ convenience! But this program also works in "stand alone" mode without using ORA
 
 
 ### Planned
-* Save a resultset back into some (Oracle) database or into some file (CSV, XSLX, PARQUET).
+* Save a resultset back into some (Oracle) database.
 
 
 ## Parallel processing
@@ -126,18 +127,22 @@ a Python runtime error, complaining about something ... ;)
 
 This happens by instantiating a database object. An example:
 ```python
-KB = ora.database(host='vm002', service_name='kb.zuhause', type='PDB', port=1521, version='19.9.0', tags = ['DEV'])
-CDB1 = ora.database(host='vm002', service_name='cdb1.zuhause', type='CDB', port=1521, version='19.9.0')
+KB = ora.database(name='KB', host='vm002',  tns='kb', type='PDB', version=_v)
+CDB1 = ora.database(name='CDB1', host='vm002', service_name='cdb1.zuhause', type='CDB', port=1521, version='19.9.0')
 CDB1.pdbs = [KB]
 ```
 Basically you are introducing 2 new variables (KB, CDB1) as Oracle database objects containing some properties
 and we relate these 2 databases by adding KB to the pdb-list of CDB1.
 
-Property 'name' can be used as an shortcut for service-name. It is just a name for your database variable.
+Property 'name' can be used as an shortcut for service-name. It is just a name for your database variable when
+you print it (e.g. `o list -d all`).
 When emitting data from multiple databases 'name' is also shown in column '_db'.
 
 Properties 'host', 'service_name' and 'port' are necessary to identify a database. Type-information (CDP / PDB / CLASSIC)
 is used for additional filtering at the commandline (e.g. --pdb automatically enforces to use only databases with type 'PDB').
+
+Property 'tns' can be used alternatively when you work with "tnsnames.ora". In this case 'tns' describes the
+name of some entry inside file "tnsnames.ora".
 
 Property 'rac' is used to disdinguish between a cluster-service (any database instance of the cluster can be
 elected by Oracle to fulfill your request) or an instance on a specific node (SINGLE-NODE) when you work with
@@ -210,6 +215,9 @@ further details.)
 When working with encrypted passwords you need to generate a key and keep it safe in some
 password store! Otherwise there is no way to decrypt your passwords again!
 
+As an alternative you can rely on Oracle wallets to handle passwords. In this case you have to
+configure your sqlnet/tnsnames setup. (Details are further down.)
+
 
 ### Generate an enycryption key
 
@@ -253,6 +261,50 @@ and replace the existing plaintext password in file 'databases.py'. Save this fi
 This will happen automatically whenever the program recognises an encrypted password. (This is why prefix "fernet:" is
 necessary when using encryption.) Currently I see no need to provide an extra "decrypt" command. So this feature is
 not implemented.
+
+
+### Using Oracle wallets
+If you don't trust the described encryption strategy for passwords from above, you can switch to Oracle wallets instead.
+You need to:
+* Create an Oracle wallet and add TNS-Name / User / Password information.
+* Add tnsnames entries for each User / Database combination you want to use.
+* Add the wallet setup to your sqlnet.ora file
+
+An example:
+```bash
+cd $ORACLE_HOME/network/admin
+mkstore -wrl . -create
+
+# Add the credentials for DBADMIN@DBADMIN_KB (DBADMIN_KB must be added to your tnsnames.ora)
+mkstore -wrl . -createCredential DBADMIN_KB DBADMIN <Pwd of DBADMIN>
+
+# Modify file sqlnet.ora
+WALLET_LOCATION = (SOURCE= (METHOD=FILE) (METHOD_DATA= (DIRECTORY="<ORA-HOME>/network/admin")))
+SQLNET.WALLET_OVERRIDE = TRUE
+
+# Do not forget to adjust file permissions for the generated wallet files! Otherwise access for
+# users other than "oracle" may fail.
+```
+
+Frank Pachot explains this in https://franckpachot.medium.com/passwordless-data-pump-19c-b21cd1e00c16 quite detailed.
+AskTom mentions some options when you need multiple users set up like this inside one database:
+https://asktom.oracle.com/pls/apex/asktom.search?tag=multiple-schema-oracle-wallet
+
+Pros are:
+* It may be easier to trust Oracle wallet technology instead of some third party source with an "unknow"
+  encryption implementation.
+
+Cons are:
+* Additional configuration on Oracle side (tnsnames.ora can get quite large. You need a separate tns-entry for
+  each User / database combination.)
+* Configuration in "databases.py" gets also bigger. (You need to define the mapping between user / database / tns-entry
+  for each combination.)
+
+A configuration example:
+```python
+DBADMIN = ora.user(name = 'DBADMIN', sysdba = False)
+DBADMIN.set_wallet(tns='DBADMIN_KB', db=KB)
+```
 
 
 ## Using custom queries
@@ -348,6 +400,73 @@ Simple filters "(-f") do not work!
 Files containing multiple sql-statements or PL/SQL-blocks are not supported yet.
 
 
+## Executing DDL statements
+DDL statements are also queries (but are handled differently regarding predicates and sorting). So the command here
+is also "query". To mark a statement as DDL operations flag "--ddl" (or "-D" as shortcut) must be provided also!
+The result of a DDL operation is always a table containing the DDL-statement and the result per database.
+
+An example:
+```bash
+o query -s "grant select on dba_objects to dbadmin" --pdb kb kb_q -u sys -D
+    | _db   | DDL-Stmt                                | Result
+----+-------+-----------------------------------------+----------
+  0 | KB    | grant select on dba_objects to dbadmin; | OK
+  0 | KB_Q  | grant select on dba_objects to dbadmin; | OK
+```
+
+Another example (DDL fails on one database):
+```bash
+o query -s "alter user kurt account lock" --pdb kb kb_q -u sys --ddl
+    | _db   | DDL-Stmt                      | Result
+----+-------+-------------------------------+---------------------------------------
+  0 | KB    | alter user kurt account lock; | OK
+  0 | KB_Q  | alter user kurt account lock; | ORA-01918: user 'KURT' does not exist
+```
+
+If you forget the flag "--ddl" and "o" recognizes a DDL statment, you get an error message informing you about this:
+```bash
+o query -s "drop table t1 purge" --pdb all -u dbadmin
+This seems to be a DDL-statement (DROP ...). Use flag --ddl / -D here!
+```
+
+
+### Invoking DDL-scripts
+
+You can put your DDL-statement also into a file. E.g. some CREATE TABLE statement:
+```sql
+create table dbadmin.t1(
+  id number(10) not null
+ ,code varchar2(10)
+ ,constraint t1_pk primary key (id)
+);
+```
+
+We save this DDL-statement into file t1.sql (inside the current directory) and execute it:
+```bash
+o query --file ./t1.sql --pdb all -u dbadmin -D
+    | _db   | DDL-Stmt                            | Result
+----+-------+-------------------------------------+----------
+  0 | KB    | create table dbadmin.t1(            | OK
+    |       |   id number(10) not null            |
+    |       |  ,code varchar2(10)                 |
+    |       |  ,constraint t1_pk primary key (id) |
+    |       | );                                  |
+  0 | KB_Q  | create table dbadmin.t1(            | OK
+    |       |   id number(10) not null            |
+    |       |  ,code varchar2(10)                 |
+    |       |  ,constraint t1_pk primary key (id) |
+    |       | );                                  |
+```
+
+Note: We provided the name of our SQL-script qualified (using "./")! The is necessary because this file is not
+inside the default script directory.
+
+**ATTENTION**
+Currently there are some restrictions:
+- "o" cannot handle scripts with multiple DDL-statements inside!
+- SQL-scripts are not checked regarding DDL-statements. (You will get a runtime error!)
+
+
 ## List configuration details
 
 Currently the LIST command can show information about databases and files inside SCRIPT_DIR.
@@ -411,6 +530,27 @@ o list --file f
  fra_usage_pct.sql | VALID    | SQL-STMT | The current size of the fast-recovery-area and some usage information in percent.
 ```
 
+## Save results
+Per default results are always displayed in your terminal window. With flag "--save" you decide where to save results.
+
+### Save results into files
+To save data we can choose between those formats:
+* csv
+* html
+* parquet (binary format - often used in bigdata setups)
+* xslx (Excel 2003 or later)
+
+The output format is identified by the extension of the file you define after flag "--save".
+
+An example:
+```bash
+o df --pdb kb kbo df --pdb kb kb_q -u dbadmin --save users.xlsx
+File 'users.xlsx' created (6 kb).
+```
+
+A remark:
+Creating "xslx" files can take quite long! If you save bigger resultsets CSV of PARQUET are good options.
+
 
 ## Some remarks about commands in general
 
@@ -420,6 +560,20 @@ TDB ...
 ## Currently implemented commands
 
 ### blocks
+Find currently blocking sessions.
+
+Example:
+```bash
+o blocks -u sys
+    | _db   |   INST_ID | SESSIONINFO   |   SPID | USERNAME   | OSUSER   | MACHINE       | STATUS   |   LAST_CALL_ET | EVENT                         | WAITING_FOR
+----+-------+-----------+---------------+--------+------------+----------+---------------+----------+----------------+-------------------------------+---------------
+  0 | KB    |         1 | 603,25133,@1  |  54346 | DBADMIN    | kurt     | vm002.zuhause | INACTIVE |             46 | SQL*Net message from client   |
+  1 | KB    |         1 | ..18,42926,@1 |  54602 | DBADMIN    | kurt     | vm002.zuhause | ACTIVE   |             23 | enq: TX - row lock contention |
+```
+
+In column SESSIONINFO blocked sessions are prefixed with ".." (maybe multiple times) to show some lock hierachy. The
+line above is always the blocker for the session indented by "..".
+
 
 ### encrypt
 
@@ -450,6 +604,23 @@ As this command has a quite similar behaviour as command TS here, we also hav hi
 
 
 ### find
+
+This is about finding database objects by name or type ...
+
+An example:
+```bash
+o find -f owner dbadmin -f name alert% --pdb all -u dbadmin
+    | _db   | OWNER   | NAME      | TYPE         | STATUS   | CREATED    | LAST_DDL_TIME
+----+-------+---------+-----------+--------------+----------+------------+-----------------
+  0 | KB    | DBADMIN | ALERTLOG  | PACKAGE      | VALID    | 2021-07-10 | 2021-07-10
+  1 | KB    | DBADMIN | ALERT_LOG | TABLE        | VALID    | 2021-07-10 | 2021-07-10
+  2 | KB    | DBADMIN | ALERTLOG  | PACKAGE BODY | VALID    | 2021-07-10 | 2021-07-10
+```
+
+Here we are using 2 filter criterias:
+* filter by owner (-f owner dbadmin)
+* filter by name (-f name alert% ... a wildcard is used)
+
 
 ### genkey
 
@@ -576,6 +747,7 @@ o usr -f ts admin_data
 
 # Related Stuff
 
+
 ## Setting up PYENV in "shared mode"
 
 A typical setup for PYENV is local in your own HOME directory. That makes sense to minimze possible
@@ -649,4 +821,249 @@ Further details about how to install python environments and how to work with PY
 * https://github.com/pyenv/pyenv
 
 ... and on various other places ... ;)
+
+
+### Setting up a local (and current) python environment
+
+You need git as a prerequisite. This is quite easy:
+```bash
+sudo yum install git
+```
+
+Afterwards we can setup "pyenv" as already described above. Here we use the default path. (.pyenv in $HOME)
+```bash
+curl https://pyenv.run | bash
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   270  100   270    0     0    277      0 --:--:-- --:--:-- --:--:--   277
+Cloning into '/home/kurt/.pyenv'...
+remote: Enumerating objects: 846, done.
+remote: Counting objects: 100% (846/846), done.
+remote: Compressing objects: 100% (445/445), done.
+remote: Total 846 (delta 471), reused 521 (delta 297), pack-reused 0
+Receiving objects: 100% (846/846), 445.31 KiB | 7.95 MiB/s, done.
+Resolving deltas: 100% (471/471), done.
+Cloning into '/home/kurt/.pyenv/plugins/pyenv-doctor'...
+remote: Enumerating objects: 11, done.
+remote: Counting objects: 100% (11/11), done.
+remote: Compressing objects: 100% (9/9), done.
+remote: Total 11 (delta 1), reused 2 (delta 0), pack-reused 0
+Unpacking objects: 100% (11/11), 38.70 KiB | 1.38 MiB/s, done.
+Cloning into '/home/kurt/.pyenv/plugins/pyenv-installer'...
+remote: Enumerating objects: 16, done.
+remote: Counting objects: 100% (16/16), done.
+remote: Compressing objects: 100% (13/13), done.
+remote: Total 16 (delta 1), reused 7 (delta 0), pack-reused 0
+Unpacking objects: 100% (16/16), 5.73 KiB | 1.91 MiB/s, done.
+Cloning into '/home/kurt/.pyenv/plugins/pyenv-update'...
+remote: Enumerating objects: 10, done.
+remote: Counting objects: 100% (10/10), done.
+remote: Compressing objects: 100% (6/6), done.
+remote: Total 10 (delta 1), reused 5 (delta 0), pack-reused 0
+Unpacking objects: 100% (10/10), 2.83 KiB | 1.41 MiB/s, done.
+Cloning into '/home/kurt/.pyenv/plugins/pyenv-virtualenv'...
+remote: Enumerating objects: 61, done.
+remote: Counting objects: 100% (61/61), done.
+remote: Compressing objects: 100% (55/55), done.
+remote: Total 61 (delta 11), reused 23 (delta 0), pack-reused 0
+Unpacking objects: 100% (61/61), 37.87 KiB | 1.89 MiB/s, done.
+Cloning into '/home/kurt/.pyenv/plugins/pyenv-which-ext'...
+remote: Enumerating objects: 10, done.
+remote: Counting objects: 100% (10/10), done.
+remote: Compressing objects: 100% (6/6), done.
+remote: Total 10 (delta 1), reused 6 (delta 0), pack-reused 0
+Unpacking objects: 100% (10/10), 2.92 KiB | 1.46 MiB/s, done.
+
+WARNING: seems you still have not added 'pyenv' to the load path.
+
+
+See the README for instructions on how to set up
+your shell environment for Pyenv.
+
+Load pyenv-virtualenv automatically by adding
+the following to ~/.bashrc:
+
+eval "$(pyenv virtualenv-init -)"
+```
+
+For a basic setup you need at least these entries in your ".bash_profile":
+```bash
+export PYENV_ROOT="$HOME/.pyenv"
+export PATH="$PYENV_ROOT/bin:$PATH"
+eval "$(pyenv init --path)"
+eval "$(pyenv virtualenv-init -)"
+```
+
+After restarting the shell you can list available python versions:
+```bash
+pyenv install --list | grep " 3"
+```
+
+I am choosing python 3.9.8 here. Python is built from scratch, so you se a lot of output!
+```bash
+pyenv install -v 3.9.8
+```
+
+After about 2 minutes the output ends with this:
+```bash
+WARNING: Additional context:
+user = False
+home = None
+root = '/'
+prefix = None
+Looking in links: /tmp/tmpb5rkeytl
+Processing /tmp/tmpb5rkeytl/setuptools-58.1.0-py3-none-any.whl
+Processing /tmp/tmpb5rkeytl/pip-21.2.4-py3-none-any.whl
+Installing collected packages: setuptools, pip
+  WARNING: Value for scheme.headers does not match. Please report this to <https://github.com/pypa/pip/issues/10151>
+  distutils: /home/kurt/.pyenv/versions/3.9.8/include/python3.9/setuptools
+  sysconfig: /tmp/python-build.20211113203247.40496/Python-3.9.8/Include/setuptools
+  WARNING: Value for scheme.headers does not match. Please report this to <https://github.com/pypa/pip/issues/10151>
+  distutils: /home/kurt/.pyenv/versions/3.9.8/include/python3.9/pip
+  sysconfig: /tmp/python-build.20211113203247.40496/Python-3.9.8/Include/pip
+  WARNING: The scripts pip3 and pip3.9 are installed in '/home/kurt/.pyenv/versions/3.9.8/bin' which is not on PATH.
+  Consider adding this directory to PATH or, if you prefer to suppress this warning, use --no-warn-script-location.
+Successfully installed pip-21.2.4 setuptools-58.1.0
+Installed Python-3.9.8 to /home/kurt/.pyenv/versions/3.9.8
+
+/tmp/python-build.20211113203247.40496 ~
+```
+
+Checking available python versions:
+```bash
+pyenv versions
+* system (set by /home/kurt/.pyenv/version)
+  3.9.8
+```
+
+Change the python version for the current user. The python installed at system level is not harmed!
+```bash
+pyenv global 3.9.8
+[kurt@vm003 ~]$ pyenv versions
+  system
+* 3.9.8 (set by /home/kurt/.pyenv/version)
+```
+
+Check if we really use python 3.9.8 now:
+```bash
+python
+Python 3.9.8 (main, Nov 13 2021, 20:33:25)
+[GCC 8.4.1 20200928 (Red Hat 8.4.1-1.0.4)] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>>
+```
+
+Upgrade "pip" (not mandatory, but you get warnings otherwise):
+```bash
+python -m pip install --upgrade pip
+Requirement already satisfied: pip in ./.pyenv/versions/3.9.8/lib/python3.9/site-packages (21.2.4)
+Collecting pip
+  Downloading pip-21.3.1-py3-none-any.whl (1.7 MB)
+     |████████████████████████████████| 1.7 MB 2.5 MB/s
+Installing collected packages: pip
+  Attempting uninstall: pip
+    Found existing installation: pip 21.2.4
+    Uninstalling pip-21.2.4:
+      Successfully uninstalled pip-21.2.4
+Successfully installed pip-21.3.1
+```
+
+
+### Install the necessary python packages:
+
+#### Pandas
+```bash
+pip install pandas
+Collecting pandas
+  Downloading pandas-1.3.4-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (11.5 MB)
+     |████████████████████████████████| 11.5 MB 2.5 MB/s
+Collecting python-dateutil>=2.7.3
+  Downloading python_dateutil-2.8.2-py2.py3-none-any.whl (247 kB)
+     |████████████████████████████████| 247 kB 35.6 MB/s
+Collecting pytz>=2017.3
+  Downloading pytz-2021.3-py2.py3-none-any.whl (503 kB)
+     |████████████████████████████████| 503 kB 33.2 MB/s
+Collecting numpy>=1.17.3
+  Downloading numpy-1.21.4-cp39-cp39-manylinux_2_12_x86_64.manylinux2010_x86_64.whl (15.7 MB)
+     |████████████████████████████████| 15.7 MB 43.9 MB/s
+Collecting six>=1.5
+  Downloading six-1.16.0-py2.py3-none-any.whl (11 kB)
+Installing collected packages: six, pytz, python-dateutil, numpy, pandas
+Successfully installed numpy-1.21.4 pandas-1.3.4 python-dateutil-2.8.2 pytz-2021.3 six-1.16.0
+```
+
+#### cx_Oracle
+You can install this package without Oracle software (client or server) already installed, but to use
+this package you need an Oracle installation!
+
+```bash
+pip install cx_Oracle
+Collecting cx_Oracle
+  Downloading cx_Oracle-8.3.0-cp39-cp39-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_12_x86_64.manylinux2010_x86_64.whl (888 kB)
+     |████████████████████████████████| 888 kB 2.8 MB/s
+Installing collected packages: cx-Oracle
+Successfully installed cx-Oracle-8.3.0
+```
+
+#### cryptography
+This package is needed for strong password encryption.
+```bash
+pip install cryptography
+Collecting cryptography
+  Downloading cryptography-35.0.0-cp36-abi3-manylinux_2_24_x86_64.whl (3.5 MB)
+     |████████████████████████████████| 3.5 MB 2.6 MB/s
+Collecting cffi>=1.12
+  Downloading cffi-1.15.0-cp39-cp39-manylinux_2_12_x86_64.manylinux2010_x86_64.whl (444 kB)
+     |████████████████████████████████| 444 kB 39.1 MB/s
+Collecting pycparser
+  Downloading pycparser-2.21-py2.py3-none-any.whl (118 kB)
+     |████████████████████████████████| 118 kB 27.3 MB/s
+Installing collected packages: pycparser, cffi, cryptography
+Successfully installed cffi-1.15.0 cryptography-35.0.0 pycparser-2.21
+```
+
+#### tabulate
+```bash
+pip install tabulate
+Collecting tabulate
+  Downloading tabulate-0.8.9-py3-none-any.whl (25 kB)
+Installing collected packages: tabulate
+Successfully installed tabulate-0.8.9
+```
+
+#### pyarrow
+This package is needed when saving query results as parquet-files.
+```bash
+pip install pyarrow
+Collecting pyarrow
+  Downloading pyarrow-6.0.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (25.6 MB)
+     |████████████████████████████████| 25.6 MB 51.6 MB/s
+Requirement already satisfied: numpy>=1.16.6 in /home/kurt/.pyenv/versions/3.9.8/lib/python3.9/site-packages (from pyarrow) (1.21.4)
+Installing collected packages: pyarrow
+Successfully installed pyarrow-6.0.0
+```
+
+#### openpyxl
+This package is used to create ".xlsx" files
+```bash
+pip install openpyxl
+Collecting openpyxl
+  Downloading openpyxl-3.0.9-py2.py3-none-any.whl (242 kB)
+     |████████████████████████████████| 242 kB 1.9 MB/s
+Collecting et-xmlfile
+  Downloading et_xmlfile-1.1.0-py3-none-any.whl (4.7 kB)
+Installing collected packages: et-xmlfile, openpyxl
+Successfully installed et-xmlfile-1.1.0 openpyxl-3.0.9
+```
+
+#### requirements-core.txt
+So these toplevel requirements exists. (Additional dependencies are managed by pip.) This file is maintained inside directory "o":
+```text
+cryptography>=35.0.0
+cx_Oracle>=8.3.0
+openpyxl>=3.0.9
+pandas>=1.3.4
+pyarrow>=6.0.0
+tabulate>=0.8.9
+```
 

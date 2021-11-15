@@ -18,8 +18,15 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+# VERSION INFORMATION:
+# ====================
+# 0.4.2 Bugfix: No error-message when we do not get results for some databases.
+#       Flag -f2 with sql-scripts; Display SQL-stmt when using -VV
+# 0.4.3 Oracle wallets as option when connecting to databases via "tnsnames.ora".
+# 0.4.4 Bugfix: Saving results as files (HTML is new option)
+#       DDL-Flag added
 
-g_VERSION = '0.4.2'
+g_VERSION = '0.4.4'
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.WARN)
 
@@ -44,6 +51,9 @@ multiple basic commands (e.g. "usr") are implemented to support DBAs in their da
                         help="show version information.")
     parser.add_argument("-V", "--verbose", action="count",
                         help="increase output verbosity")
+
+    parser.add_argument("-D", "--ddl", dest="ddl", action="store_true",
+                        help="To declare the current command or SQL-script as DDL-statement.")
 
     # We distinguish between "DB" (classic)", "CDB" and "PDB". This also works as an
     # implicit filter. (Class "database" has an attribute "type".)
@@ -93,7 +103,7 @@ Use 'ALL', if you want to execute a command on all known pluggable databases."""
 
     # Saving data ...
     parser.add_argument("--save", dest="save", action='append', nargs='+',
-                        help="Saving results to CSV, XLSX, PARQUET or ORACLE")
+                        help="Saving results to CSV, HTML, XLSX, PARQUET or ORACLE")
 
     return parser.parse_args()
 
@@ -111,7 +121,24 @@ def filter_expr(simple_filter, filter_expr):
     return filter
 
 
-par = namedtuple('par', 'cmd db usr verbose')
+def __check_sql(sql, starts_with):
+    if sql.startswith(starts_with):
+        print(
+            f"This seems to be a DDL-statement ({starts_with.upper()} ...). Use flag --ddl / -D here!")
+        exit(1)
+
+
+def check_for_ddl_keywords(sqlstmt):
+    sql = sqlstmt.strip().lower()
+    __check_sql(sql, "create")
+    __check_sql(sql, "alter")
+    __check_sql(sql, "truncate")
+    __check_sql(sql, "drop")
+    __check_sql(sql, "grant")
+    __check_sql(sql, "revoke")
+
+
+par = namedtuple('par', 'cmd db usr')
 
 
 def exec_command(par):
@@ -119,18 +146,19 @@ def exec_command(par):
     # "par" is a named-tuple (see definition above). The return value is a list
     # containing the database object and the results of the command. In case of an
     # error [db, <empty dataframe>] is the result!
-    if par.verbose >= 1:
-        print("Processing database {} ...".format(par.db.name))
+    if par.cmd.ctx.verbose >= 1:
+        print(f"Processing database {par.db.name} ...")
 
-    par.cmd.ctx.session = ora.session(par.db, par.usr, par.verbose)
+    par.cmd.ctx.session = ora.session(par.db, par.usr, par.cmd.ctx.verbose)
 
     try:
         df = par.cmd.execute()
         df.insert(loc=0, column='_db', value=par.db.name)
         return ['OK', par.db, df]
     except Exception as e:
-        print("\n*** error executing command for database '{}'! ***".format(par.db.name))
-        print("User is '{}', error message is: {}\n".format(par.usr.name, str(e)))
+        print(
+            f"\n*** error executing command for database '{par.db.name}'! ***")
+        print(f"User is '{par.usr.name}', error message is: {str(e)}\n")
         return ['ERR', par.db, pd.DataFrame()]
 
 
@@ -147,7 +175,7 @@ def run():
         exit(0)
 
     if args.command not in ['blocks', 'df', 'encrypt', 'find', 'genkey', 'list', 'par', 'query', 'ts', 'usr']:
-        print("[{}] is not a valid command!".format(args.command))
+        print(f"[{args.command}] is not a valid command!")
         exit(1)
 
     # working with passwords ... ------------------------------------------------------------
@@ -158,6 +186,11 @@ def run():
     if args.command == "encrypt":
         mm.encrypt_Password(args.pwd)
         exit(0)
+
+    # additional checks / preparations ... --------------------------------------------------
+    if args.command == "query" and args.sqlstmt and not args.ddl:
+        # check if the SQL statement contains some DDL keywords ...
+        check_for_ddl_keywords(args.sqlstmt)
 
     # Prepare the database list to be processed
     DBL = mm.database_list(args.db, args.cdb, args.pdb, args.tag)
@@ -183,6 +216,7 @@ def run():
                          filterExpr=filtering, sortExpr=args.order,
                          sqlStmt=args.sqlstmt,
                          sqlFile=args.sqlfile,
+                         DDL=args.ddl,
                          scriptDir=mm.script_dir(SCRIPT_DIR),
                          verbose=args.verbose)
 
@@ -197,14 +231,15 @@ def run():
         if cmdCtx.verbose >= 1:
             print('SERIAL PROCESSING')
         for db in DBL:
-            df = exec_command(par(c, db, usr, cmdCtx.verbose))
+            df = exec_command(par(c, db, usr))
             df_list.append(df)
     else:
         if len(DBL) > 1:
             if cmdCtx.verbose >= 1:
-                print('PARALLEL PROCESSING: maximum is {} workers'.format(
-                    args.parallel))
-            params = list(map(lambda x: par(c, x, usr, cmdCtx.verbose), DBL))
+                print(
+                    f'PARALLEL PROCESSING: maximum is {args.parallel} workers')
+            params = list(
+                map(lambda x: par(c, x, usr), DBL))
 
             # We start up to 16 (or whatever value was provided) parallel processes to
             # get data from Oracle databases.
@@ -217,7 +252,7 @@ def run():
             if cmdCtx.verbose >= 1:
                 print('Only 1 database: PARALLEL PROCESSING downgraded to SERIAL.')
 
-            df = exec_command(par(c, DBL[0], usr, cmdCtx.verbose))
+            df = exec_command(par(c, DBL[0], usr))
             df_list.append(df)
 
     after = time.perf_counter()
@@ -240,19 +275,26 @@ def run():
                 "\nThe command/query returned no results! (There will be no further output/file.)\n")
             exit(0)
         if args.save:
-            spar = args.save[0]
-            if spar[0] not in ['csv', 'xlsx', 'parquet', 'ora']:
-                print("'{}' is not a valid option to save data!".format(
-                    spar[0].lower()))
+            df = pd.concat(df)
+            fname = args.save[0][0]
+            extension = os.path.splitext(fname)[1].lower()
+            if extension not in ['.csv', '.xlsx', '.parquet', '.html']:
+                print(f"'{extension}' is not a valid extension to save data!")
                 exit(1)
-            if spar[0].lower() == 'csv':
-                df.to_csv(path_or_buf=spar[1], index=False,
+            if extension == '.csv':
+                df.to_csv(path_or_buf=fname, index=False,
                           quoting=csv.QUOTE_NONNUMERIC)
-            elif spar[0].lower() == 'xlsx':
-                df.to_excel(excel_writer=spar[1], index=False)
-            elif spar[0].lower() == 'parquet':
+            elif extension == '.html':
+                df.to_html(fname, index=False)
+            elif extension == '.xlsx':
+                df.to_excel(excel_writer=fname, index=False)
+            elif extension == '.parquet':
                 pa_table = pa.Table.from_pandas(df)
-                pq.write_table(pa_table, spar[1])
+                pq.write_table(pa_table, fname)
+
+            fsize = round(os.path.getsize(fname)/1024, 0)
+            print(f"File '{fname}' created ({int(fsize)} kb).")
+
         else:
             # Print the final resultset (over all provided databases)
             print(tabulate(pd.concat(df), headers='keys', tablefmt='presto'))

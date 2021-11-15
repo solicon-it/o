@@ -13,6 +13,7 @@ select
  ,default_tablespace   ts
  ,temporary_tablespace tempts
  ,to_char(created, 'yyyy-mm-dd hh24:mi:ss') created
+ ,to_char(last_login, 'yyyy-mm-dd hh24:mi:ss') last_login
  ,oracle_maintained    ora
  ,password_versions    pwd_versions
 from
@@ -30,7 +31,7 @@ class usr(_base_class.OraCommand):
     def __init__(self, ctx):
         super().__init__(ctx)
         self.cols = ['NAME', 'ACC_STAT', 'PROFILE', 'TS',
-                     'TEMPTS', 'CREATED', 'ORA', 'PWD_VERSIONS']
+                     'TEMPTS', 'CREATED', 'LAST_LOGIN', 'ORA', 'PWD_VERSIONS']
 
     def execute(self):
         super().checkColNames(self.ctx.filterExpr)
@@ -44,5 +45,3 @@ class usr(_base_class.OraCommand):
         df = pd.read_sql(SQL, con=self.ctx.session.connection)
 
         return df
-
-        

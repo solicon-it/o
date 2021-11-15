@@ -17,7 +17,7 @@ def sqlfile(fname, scriptDir):
         return f.read()
     else:
         print(
-            "sqlfile '{}' does not exist - processing stopped!".format(qualified_filename))
+            f"sqlfile '{qualified_filename}' does not exist - processing stopped!")
         exit(1)
 
 
@@ -35,17 +35,35 @@ class query(_base_class.OraCommand):
         else:
             Q = sqlfile(self.ctx.sqlFile, self.ctx.scriptDir)
 
+        df = None
+
         # Assumption:
         # The query inside the file ends with a simple SELECT-clause (no WHERE predicates).
         # In this case we can easily add additional predicates defined per flag "-f2".
         SQL = Q.strip().rstrip(';')
-        SQL = SQL + " where 1=1 {} order by {}"
-        predicateString = super().predicateExpr(
-            super().adjustCase_forColumnValues(self.ctx.filterExpr, []))
-        SQL = SQL.format(predicateString, super().sortExpr(self.ctx.sortExpr))
+        if self.ctx.DDL:
+            if self.ctx.verbose >= 1:
+                print("DDL-processing activated (no additional predicates no sorting).")
+        else:
+            SQL = SQL + " where 1=1 {} order by {}"
+            predicateString = super().predicateExpr(
+                super().adjustCase_forColumnValues(self.ctx.filterExpr, []))
+            SQL = SQL.format(
+                predicateString, super().sortExpr(self.ctx.sortExpr))
+
         super().printSQL(SQL)
 
         self.ctx.session.openConnection()
-        df = pd.read_sql(SQL, con=self.ctx.session.connection)
+        if self.ctx.DDL:
+            result = "OK"
+            cur = self.ctx.session.connection.cursor()
+            try:
+                cur.execute(SQL)
+            except Exception as e:
+                result = str(e)
+
+            df = pd.DataFrame({'DDL-Stmt': [SQL+';'], 'Result': [result]})
+        else:
+            df = pd.read_sql(SQL, con=self.ctx.session.connection)
 
         return df

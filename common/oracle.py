@@ -65,10 +65,13 @@ class user:
         self.pwd = pwd
         self.sysdba = sysdba
         self.pwd_for_dbs = []
+        self.wallet_for_dbs = []
 
     def set_pwd(self, pwd, dbs):
         self.pwd_for_dbs.append([pwd, dbs])
 
+    def set_wallet(self, tns=None, db=None):
+        self.wallet_for_dbs.append([tns, db])
 
     def decrypt_Password(self, encPwd):
         if not encPwd.startswith('fernet:'):
@@ -81,7 +84,6 @@ class user:
         pwd = fernet.decrypt(encPwd[7:].encode())  # Honor prefix "fernet:" !!!
         return pwd.decode()
 
-
     def pwd_for_db(self, db):
         "return the plaintext password for the provided database."
         if self.pwd:
@@ -92,7 +94,14 @@ class user:
                     return self.decrypt_Password(pw[0])
         return None
 
-    
+    def walletTNS_for_db(self, db):
+        "return the tns-entry configured for access via wallet for the provided database."
+        for tns in self.wallet_for_dbs:
+            if db == tns[1]:
+                return tns[0]
+        return None
+
+
 class session:
     def __init__(self, database, user, verbose=0):
         self.database = database
@@ -107,13 +116,33 @@ class session:
             if self.verbose >= 2:
                 print("{}: connect as sysdba".format(self.database.name))
             # connect as SYS with osuser-privs (dba) and ORACLE_SID setup ...
-            self.connection = ora.connect("/", mode = ora.SYSDBA)
+            self.connection = ora.connect("/", mode=ora.SYSDBA)
         else:
             pwd = self.user.pwd_for_db(self.database)
-            if not pwd:
-                raise Exception("No password for {}@{} available!".format(self.user.name, self.database.service_name))
+            wallet_tns = self.user.walletTNS_for_db(self.database)
 
-            if self.user.sysdba:
-                self.connection = ora.connect(self.user.name, pwd, dsn = self.database.dsn(), mode = ora.SYSDBA)
-            else:
-                self.connection = ora.connect(self.user.name, pwd, dsn = self.database.dsn())
+            if not pwd and not wallet_tns:
+                raise Exception(
+                    "No password for {}@{} available!".format(self.user.name, self.database.service_name or self.database.tns))
+
+            if pwd:
+                if self.verbose >= 2:
+                    print(
+                        "connect to {} with provided username ({}) & password.".format(self.database.name, self.user.name))
+
+                if self.user.sysdba:
+                    self.connection = ora.connect(
+                        self.user.name, pwd, dsn=self.database.dsn(), mode=ora.SYSDBA)
+                else:
+                    self.connection = ora.connect(
+                        self.user.name, pwd, dsn=self.database.dsn())
+
+            if wallet_tns:
+                if self.verbose >= 2:
+                    print(
+                        "using TNS-entry '{}' with wallet configuration.".format(self.database.name))
+                if self.user.sysdba:
+                    self.connection = ora.connect(
+                        dsn=wallet_tns, mode=ora.SYSDBA)
+                else:
+                    self.connection = ora.connect(dsn=wallet_tns)

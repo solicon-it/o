@@ -26,19 +26,22 @@ CDB1 = ora.database(name='CDB1', host='vm002', service_name='cdb1.zuhause',
                     type='CDB', rac=None, port=1521, version=_v)
 CDB1.pdbs = [KB]
 
-KB_Q = ora.database(name='KB_Q', host='vm002', service_name='kb_q.zuhause', type='PDB', rac=None, port=1521, version=_v, tags = ['Q'])
-CDB2 = ora.database(name='CDB2', host='vm002', service_name='cdb2.zuhause', type='CDB', rac=None, port=1521, version=_v)
+KB_Q = ora.database(name='KB_Q', host='vm002', service_name='kb_q.zuhause',
+                    type='PDB', rac=None, port=1521, version=_v, tags=['Q'])
+CDB2 = ora.database(name='CDB2', host='vm002', service_name='cdb2.zuhause',
+                    type='CDB', rac=None, port=1521, version=_v)
 CDB2.pdbs = [KB_Q]
 
 
-KURT = ora.user(name = 'KURT', sysdba = False)
-KURT.set_pwd('kurt', [KB])
+KURT = ora.user(name='KURT', sysdba=False)
+#KURT.set_pwd('kurt', [KB])
+KURT.set_wallet(tns='KB', db=KB)
 
-DBADMIN = ora.user(name = 'DBADMIN', sysdba = False)
+DBADMIN = ora.user(name='DBADMIN', sysdba=False)
 DBADMIN.set_pwd('fernet:gAAAAABg2LE-pKcmFhVoMFOytdBniOAjFBV2R3kTfcRWEXYaeGRUgxV9zt3qUMf6o6t4irY1s_DTIcoAYDQ8OwylCQdG4LxuVA==',
                 [KB, KB_Q])
 
-SYS = ora.user(name = 'SYS', sysdba = True)
+SYS = ora.user(name='SYS', sysdba=True)
 SYS.set_pwd('xxx', [KB, KB_Q, CDB1, CDB2])
 
 DEFAULT_USER = DBADMIN
