@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from typing import List
 import logging
 import argparse
 import os
@@ -25,8 +26,12 @@ import pyarrow.parquet as pq
 # 0.4.3 Oracle wallets as option when connecting to databases via "tnsnames.ora".
 # 0.4.4 Bugfix: Saving results as files (HTML is new option)
 #       DDL-Flag added
+# 0.4.5 Bugfix: list DBL is empty due to the provided tag.
+#       Bugfix: add WITH-Clause in "query.py"
+# 0.4.6 Minimize Oracle error messages during "non verbose" processing
+# 0.4.7 Dropping columns when displaying or exporting dataframes.
 
-g_VERSION = '0.4.4'
+g_VERSION = '0.4.7'
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.WARN)
 
@@ -94,6 +99,10 @@ Use 'ALL', if you want to execute a command on all known pluggable databases."""
     parser.add_argument("-o", "--order", dest="order", action='append', nargs='+',
                         help="A column (see FILTER for possbile names) optionally followed by ASC or DESC.")
 
+    # Dropping columns ...
+    parser.add_argument("--dropcols", dest="dropcols", action='append', nargs='+',
+                        help="Remove columns before displaying or exporting a dataframe.")
+
     # parallel processing ...
     process_group = parser.add_mutually_exclusive_group(required=False)
     process_group.add_argument("--parallel", dest="parallel", action='store', default=16,
@@ -108,7 +117,7 @@ Use 'ALL', if you want to execute a command on all known pluggable databases."""
     return parser.parse_args()
 
 
-def filter_expr(simple_filter, filter_expr):
+def filter_expr(simple_filter: List[List[str]], filter_expr: List[List[str]]) -> List[List[str]]:
     filter = None
     if simple_filter and filter_expr:
         filter = simple_filter + filter_expr
@@ -121,14 +130,14 @@ def filter_expr(simple_filter, filter_expr):
     return filter
 
 
-def __check_sql(sql, starts_with):
+def __check_sql(sql: str, starts_with: str):
     if sql.startswith(starts_with):
         print(
             f"This seems to be a DDL-statement ({starts_with.upper()} ...). Use flag --ddl / -D here!")
         exit(1)
 
 
-def check_for_ddl_keywords(sqlstmt):
+def check_for_ddl_keywords(sqlstmt: str):
     sql = sqlstmt.strip().lower()
     __check_sql(sql, "create")
     __check_sql(sql, "alter")
@@ -136,6 +145,10 @@ def check_for_ddl_keywords(sqlstmt):
     __check_sql(sql, "drop")
     __check_sql(sql, "grant")
     __check_sql(sql, "revoke")
+
+
+def flatten(t):
+    return [item for sublist in t for item in sublist]
 
 
 par = namedtuple('par', 'cmd db usr')
@@ -158,7 +171,11 @@ def exec_command(par):
     except Exception as e:
         print(
             f"\n*** error executing command for database '{par.db.name}'! ***")
-        print(f"User is '{par.usr.name}', error message is: {str(e)}\n")
+        err = str(e)
+        if par.cmd.ctx.verbose >= 1:
+            print(f"User is '{par.usr.name}', error message is: {str(e)}\n")
+        else:
+            print(err[err.find('ORA-'):])
         return ['ERR', par.db, pd.DataFrame()]
 
 
@@ -171,7 +188,7 @@ def run():
     args = cmdline_args()
 
     if args.version:
-        print("V " + g_VERSION + " - (c) solicon IT GmbH 2021")
+        print("V " + g_VERSION + " - (c) solicon IT GmbH 2021,2022")
         exit(0)
 
     if args.command not in ['blocks', 'df', 'encrypt', 'find', 'genkey', 'list', 'par', 'query', 'ts', 'usr']:
@@ -194,6 +211,10 @@ def run():
 
     # Prepare the database list to be processed
     DBL = mm.database_list(args.db, args.cdb, args.pdb, args.tag)
+    if len(DBL) == 0:
+        if args.command != "list":
+            print('Did not find any matching databases. Pls check the tag you provided!')
+            exit(1)
 
     # listing config information ... --------------------------------------------------------
     if args.command == "list":
@@ -270,26 +291,30 @@ def run():
             else:
                 err.append(el[1].name)
 
+        final_df = pd.concat(df)
+        if args.dropcols:
+            print(flatten(args.dropcols))
+            final_df = final_df.drop(columns=flatten(args.dropcols))
+
         if len(df) == 0:
             print(
                 "\nThe command/query returned no results! (There will be no further output/file.)\n")
             exit(0)
         if args.save:
-            df = pd.concat(df)
             fname = args.save[0][0]
             extension = os.path.splitext(fname)[1].lower()
             if extension not in ['.csv', '.xlsx', '.parquet', '.html']:
                 print(f"'{extension}' is not a valid extension to save data!")
                 exit(1)
             if extension == '.csv':
-                df.to_csv(path_or_buf=fname, index=False,
-                          quoting=csv.QUOTE_NONNUMERIC)
+                final_df.to_csv(path_or_buf=fname, index=False,
+                                quoting=csv.QUOTE_NONNUMERIC)
             elif extension == '.html':
-                df.to_html(fname, index=False)
+                final_df.to_html(fname, index=False)
             elif extension == '.xlsx':
-                df.to_excel(excel_writer=fname, index=False)
+                final_df.to_excel(excel_writer=fname, index=False)
             elif extension == '.parquet':
-                pa_table = pa.Table.from_pandas(df)
+                pa_table = pa.Table.from_pandas(final_df)
                 pq.write_table(pa_table, fname)
 
             fsize = round(os.path.getsize(fname)/1024, 0)
@@ -297,7 +322,7 @@ def run():
 
         else:
             # Print the final resultset (over all provided databases)
-            print(tabulate(pd.concat(df), headers='keys', tablefmt='presto'))
+            print(tabulate(final_df, headers='keys', tablefmt='presto'))
             if err:
                 print("\n*** ATTENTION ***")
                 if len(err) == 1:

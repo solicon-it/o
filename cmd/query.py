@@ -4,7 +4,7 @@ import pandas as pd
 from . import _base_class
 
 
-def sqlfile(fname, scriptDir):
+def sqlfile(fname: str, scriptDir: str) -> str:
     qualified_filename = None
     p, f = os.path.split(fname)
     if p:
@@ -32,6 +32,10 @@ class query(_base_class.OraCommand):
         Q = None
         if self.ctx.sqlStmt:
             Q = self.ctx.sqlStmt
+            # Add a WITH-clause here, so that adding WHERE and ORDER BY later on
+            # does not result in an error.
+            if not Q.strip().upper().startswith('WITH'):
+                Q = 'with QQQ as (' + Q + ') select * from QQQ'
         else:
             Q = sqlfile(self.ctx.sqlFile, self.ctx.scriptDir)
 

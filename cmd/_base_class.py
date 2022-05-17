@@ -1,12 +1,13 @@
+from typing import List
 import o.cmd.context as context
 
 
 class OraCommand:
-    def __init__(self, ctx):
+    def __init__(self, ctx: context):
         self.ctx = ctx
         self.cols = []
 
-    def checkColNames(self, filterArgs):
+    def checkColNames(self, filterArgs: List[List[str]]):
         "only simple filter expressions [colname value] are checks here. (So no filter provided via flag '-f2'!"
         if filterArgs:
             simple_filter = list(filter(lambda f: len(f) == 2, filterArgs))
@@ -21,7 +22,7 @@ class OraCommand:
     # The default is to do an upper() for all values provided via -f flag.
     # But in some situations (e.g. "parameters") we must not do an upper() for some
     # columns, because the query would not find any matches doing so.
-    def adjustCase_forColumnValues(self, filterArgs, noAdjustCols):
+    def adjustCase_forColumnValues(self, filterArgs: List[List[str]], noAdjustCols: List[str]):
         if filterArgs:
             for f in filterArgs:
                 if len(f) > 1:
@@ -29,7 +30,7 @@ class OraCommand:
                         f[1] = f[1].upper()
         return filterArgs
 
-    def predicateExpr(self, filterArgs):
+    def predicateExpr(self, filterArgs: List[List[str]]) -> str:
         pred = ""
         if filterArgs:
             for f in filterArgs:
@@ -40,7 +41,7 @@ class OraCommand:
                     pred += "and {} like '{}' ".format(f[0], f[1])
         return pred
 
-    def sortExpr(self, sortArgs):
+    def sortExpr(self, sortArgs: List[List[str]]) -> str:
         sort = ""
         if sortArgs != None:
             i = 0
@@ -58,12 +59,10 @@ class OraCommand:
 
         return sort
 
-    def printSQL(self, SQL):
+    def printSQL(self, SQL: str):
         if self.ctx.verbose >= 2:
             print("Predicates = {}".format(self.ctx.filterExpr))
             print(SQL)
 
-    def execute(self, predicates, sort_order):
+    def execute(self, predicates: str, sort_order: str):
         pass
-
-

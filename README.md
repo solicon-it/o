@@ -1005,7 +1005,7 @@ Installing collected packages: cx-Oracle
 Successfully installed cx-Oracle-8.3.0
 ```
 
-#### cryptography
+ #### cryptography
 This package is needed for strong password encryption.
 ```bash
 pip install cryptography
@@ -1067,3 +1067,265 @@ pyarrow>=6.0.0
 tabulate>=0.8.9
 ```
 
+#### The complete script
+```bash
+pip install pandas
+pip install cx_Oracle
+pip install cryptography
+pip install tabulate
+pip install pyarrow
+pip install openpyxl
+```
+
+## Using "o" in Windows
+As all used packages are also available in Windows, setting up and using "o" is quite straightforward.
+But there are some issues to consider ...
+
+
+### Setting common environment variables
+Typically these are set globally (Control panel / edit system environment variables).
+```cmd
+set ORACLE_HOME=<Oracle SW-HOME>
+set PYENV=c:\progs\pyenv\pyenv-win
+set PYTHONPATH=C:\progs\oratk\cmdline
+
+set PATH=%PATH%;c:\progs\pyenv\pyenv-win\bin;c:\progs\pyenv\pyenv-win\shims
+```
+
+An Oracle Client Installation is a prerequisite to setup cx_Oracle!
+
+
+### Installing "pyenv" for Windows
+Check out https://github.com/pyenv-win/pyenv-win for all the details!
+
+#### Get and install pyenv-win
+
+1. Get the software: https://github.com/pyenv-win/pyenv-win/archive/master.zip
+
+2. Move the content into directory "C:\progs" and rename the toplevel directory to "pyenv".
+   So you have a match regarding environemt variable `%PYENV%`.
+
+#### Configure Powershell
+If you execute "pyenv" inside an old DOS-shell it will work immediately.
+```cmd
+pyenv
+pyenv 2.64.11
+Usage: pyenv <command> [<args>]
+
+Some useful pyenv commands are:
+   commands     List all available pyenv commands
+   duplicate    Creates a duplicate python environment
+   local        Set or show the local application-specific Python version
+   global       Set or show the global Python version
+   shell        Set or show the shell-specific Python version
+   install      Install a Python version using python-build
+   uninstall    Uninstall a specific Python version
+   update       Update the cached version DB
+   rehash       Rehash pyenv shims (run this after installing executables)
+   vname        Show the current Python version
+   version      Show the current Python version and its origin
+   version-name Show the current Python version
+   versions     List all Python versions available to pyenv
+   exec         Runs an executable by first preparing PATH so that the selected Python
+   which        Display the full path to an executable
+   whence       List all Python versions that contain the given executable
+
+See `pyenv help <command>' for information on a specific command.
+For full documentation, see: https://github.com/pyenv-win/pyenv-win#readme
+```
+
+In Powershell this is not garuanteed! You may get something like:
+```powershell
+pyenv
+pyenv : File C:\progs\pyenv\pyenv-win\bin\pyenv.ps1 cannot be loaded. The file C:\progs\pyenv\pyenv-win\bin\pyenv.ps1
+is not digitally signed. You cannot run this script on the current system. For more information about running scripts
+and setting execution policy, see about_Execution_Policies at https:/go.microsoft.com/fwlink/?LinkID=135170.
+At line:1 char:1
++ pyenv
++ ~~~~~
+    + CategoryInfo          : SecurityError: (:) [], PSSecurityException
+    + FullyQualifiedErrorId : UnauthorizedAccess
+```
+
+Mircosoft even provides a link in the error-message decribing the situation and how to fix it!
+
+See: (https:/go.microsoft.com/fwlink/?LinkID=135170)
+
+
+To change the mode regarding script execution for the current user:
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy UnRestricted -Scope CurrentUser
+
+Execution Policy Change
+The execution policy helps protect you from scripts that you do not trust. Changing the execution policy might expose
+you to the security risks described in the about_Execution_Policies help topic at
+https:/go.microsoft.com/fwlink/?LinkID=135170. Do you want to change the execution policy?
+[Y] Yes  [A] Yes to All  [N] No  [L] No to All  [S] Suspend  [?] Help (default is "N"): y
+```
+
+Now you can execute `pyenv` in the commandline, but you still get this warning eacht time you execute it:
+```powershell
+pyenv
+
+Security warning
+Run only scripts that you trust. While scripts from the internet can be useful, this script can potentially harm your
+computer. If you trust this script, use the Unblock-File cmdlet to allow the script to run without this warning
+message. Do you want to run C:\progs\pyenv\pyenv-win\bin\pyenv.ps1?
+[D] Do not run  [R] Run once  [S] Suspend  [?] Help (default is "D"): Y
+```
+
+To permanently get rid of this warning unblock the script:
+```powershell
+Unblock-File C:\progs\pyenv\pyenv-win\bin\pyenv.ps1
+```
+
+Afterwards pyenv works also in Powershell without any issues.
+
+
+#### Install Python
+To list e.g. all available versions related to Python 3.10 you can do
+```powershell
+pyenv install -l | Select-String "3.10"
+
+3.10.0-win32
+3.10.0
+3.10.1-win32
+3.10.1
+3.10.2-win32
+3.10.2
+3.10.3-win32
+3.10.3
+3.10.4-win32
+3.10.4
+```
+... or something similar ...
+
+**As local Administrator:** to install Python 3.10.4 (64bit) type:
+```powershell
+pyenv install -v 3.10.4
+```
+
+For some non-silent installs a wizard may pop up. Just confirm any proposed configurations!
+
+#### Switch to your newly installed Python
+Just do:
+```powershell
+pyenv global 3.10.4
+
+python
+Python 3.10.4 (tags/v3.10.4:9d38120, Mar 23 2022, 23:13:41) [MSC v.1929 64 bit (AMD64)] on win32
+Type "help", "copyright", "credits" or "license" for more information.
+```
+
+See https://realpython.com/intro-to-pyenv/ for additional information regarding `pyenv`.
+
+
+### Setting ORACMD_KEY
+In the DOS-commandline you do it with:
+```cmd
+set ORACMD_KEY='<your key>'
+```
+
+In Powershell this is done with:
+```powershell
+$env:ORACMD_KEY='<your key>'
+```
+
+
+### Aliases
+There are some quirks regarding aliases in Windows. Typing `python -m o` all the time is annoying,
+so you need some shortcut (aka alias) here!
+
+In the classic DOS-commandline you can use:
+```cmd
+doskey o=python3 -m o $*
+```
+
+In powershell this doskey-command is not working. I found this useful:
+```powershell
+function o {python3 -m o $args}
+```
+
+
+### Doing custom SQL-statments when inside a DOS-shell (cmd.exe)
+Inside the old DOS-shell "$" has no special meaning. You always need double quotes (") when providing
+some custom SQL-statement:
+```cmd
+o query -s 'select group#, bytes/1024/1024 mb from v$log' -d kb
+```
+... does NOT work !!!
+
+But:
+```cmd
+o query -s "select group#, bytes/1024/1024 mb from v$log" -d kb
+```
+
+In the end this is quite nice, because you do not have to think about when to use single or double
+quotes as you have to do in Linux.
+
+
+### Doing custom SQL-statements when inside Powershell
+Inside Powershell "$" has a meaning. So we have the same situation as in Linux here!
+
+So this is just failing:
+```powershell
+o query -s "select group#, bytes/1024/1024 mb from v$log" -d kb
+
+*** error executing command for database 'KB'! ***
+ORA-00942: table or view does not exist
+```
+This is because "v$log" is changed into "v" as there is no variable "$log".
+
+But you have some options here!
+Keep using single quotes and escape them if necessary:
+```powershell
+o query -s 'select group#, status, bytes/1024/1024 mb from v$log where status=''CURRENT''' -d kb
+    | _db   |   GROUP# | STATUS   |   MB
+----+-------+----------+----------+------
+  0 | KB    |        2 | CURRENT  |  200
+```
+
+Use double quotes and escape "$":
+```powershell
+o query -s "select group#, status, bytes/1024/1024 mb from v`$log where status='CURRENT'" -d kb
+    | _db   |   GROUP# | STATUS   |   MB
+----+-------+----------+----------+------
+  0 | KB    |        2 | CURRENT  |  200
+```
+Powershell uses a single backquote to escape special symbols!
+
+
+### Percent (%) cannot be used as a wildcard operator
+This is some weird(?) behaviour in DOS-shell and in Powershell. If you do something like:
+```powershell
+o query -s "select *from v`$logfile where type like 'ON%'" -d kb -VV
+Only 1 database: PARALLEL PROCESSING downgraded to SERIAL.
+Processing database KB ...
+Predicates = None
+with QQQ as (select *from v$logfile where type like 'ON') select * from QQQ where 1=1  order by 1
+connect to KB with provided username (DBADMIN) & password.
+Elapsed time is 0.127 seconds for 1 database(s).
+ _db   | GROUP#   | STATUS   | TYPE   | MEMBER   | IS_RECOVERY_DEST_FILE   | CON_ID
+-------+----------+----------+--------+----------+-------------------------+----------
+```
+Verbosity was increased to get more details. And here we see that "%" just gets discarded!
+This is because "%" is used to identify variables.
+
+A preliminary solution is to just double the % sign.
+*So always use "%%" instead of "%"!* This works inside DOS-cmdline and inside Powershell.
+
+An example (look for %% !!!):
+```powershell
+o query -s "select *from v`$logfile where type like 'ON%%'" -d kb -VV
+Only 1 database: PARALLEL PROCESSING downgraded to SERIAL.
+Processing database KB ...
+Predicates = None
+with QQQ as (select *from v$logfile where type like 'ON%') select * from QQQ where 1=1  order by 1
+connect to KB with provided username (DBADMIN) & password.
+Elapsed time is 0.131 seconds for 1 database(s).
+    | _db   |   GROUP# | STATUS   | TYPE   | MEMBER                                            | IS_RECOVERY_DEST_FILE   |   CON_ID
+----+-------+----------+----------+--------+---------------------------------------------------+-------------------------+----------
+  0 | KB    |        1 |          | ONLINE | /u02/oradata/CDB1/onlinelog/o1_mf_1_hxq8xpf5_.log | NO                      |        0
+  1 | KB    |        2 |          | ONLINE | /u02/oradata/CDB1/onlinelog/o1_mf_2_hxq8xpok_.log | NO                      |        0
+  2 | KB    |        3 |          | ONLINE | /u02/oradata/CDB1/onlinelog/o1_mf_3_hxq8xpxz_.log | NO                      |        0
+```

@@ -1,3 +1,5 @@
+from typing import List, Tuple
+
 import os
 import re
 import pandas as pd
@@ -10,19 +12,19 @@ from cryptography.fernet import Fernet
 # passwords, ...
 
 
-def script_dir(dir):
+def script_dir(dir) -> str:
     if dbs._SQL_SCRIPT_DIR:
         return dbs._SQL_SCRIPT_DIR
     else:
         return dir
 
 
-def osuser():
+def osuser() -> str:
     userhome = os.path.expanduser('~')
     return os.path.split(userhome)[-1]
 
 
-def user(name, handleUnknownUser=False):
+def user(name: str, handleUnknownUser: bool = False) -> ora.user or None:
     try:
         usr = eval("dbs."+name.upper())
         if isinstance(usr, ora.user):
@@ -37,7 +39,7 @@ def user(name, handleUnknownUser=False):
             exit(1)
 
 
-def database(name):
+def database(name: str) -> ora.database or None:
     try:
         db = eval("dbs."+name)
         if isinstance(db, ora.database):
@@ -49,11 +51,11 @@ def database(name):
         exit(1)
 
 
-def all_databases():
-    return list( filter(lambda x: not x.startswith('_') and x != 'ora', dir(dbs)))
+def all_databases() -> List[ora.database]:
+    return list(filter(lambda x: not x.startswith('_') and x != 'ora', dir(dbs)))
 
 
-def DatabaseName_fromEnv():
+def DatabaseName_fromEnv() -> str or None:
     # In a typical Oracle environment we are using additional variables to control
     # the behaviour of our scripts. 'DBA_DB_NAME' contains database names in the
     # format 'CDB'_'PDB' or just a simple name, if it is a classic database setup.
@@ -78,7 +80,11 @@ def database_list(dbs, cdbs, pdbs, tags):
     # Create the list of database names used as targets for the current command ...
     ALL_DBS = False
     if not dblist:
-        DBL = [DatabaseName_fromEnv()]
+        DBL = DatabaseName_fromEnv()
+        if DBL is None:
+            DBL = []
+        else:
+            DBL = [DBL]
     else:
         DBL = list(set([item for sublist in dblist for item in sublist]))
         if DBL[-1].upper() == "ALL":
@@ -92,7 +98,8 @@ def database_list(dbs, cdbs, pdbs, tags):
 
     # Filter databases with RAC = SINGLE-NODE when using "all" databases ...
     if ALL_DBS:
-        DBL = list(filter(lambda db: db.rac == 'CLUSTER-SERVICE' or db.rac == None,  DBL))
+        DBL = list(filter(lambda db: db.rac ==
+                   'CLUSTER-SERVICE' or db.rac == None,  DBL))
 
     # Filter databases if we want to see only CDBs or PDBs ...
     dbtype = None
@@ -114,7 +121,7 @@ def database_list(dbs, cdbs, pdbs, tags):
     return DBL
 
 
-def print_db_list(DBL):
+def print_db_list(DBL: List[ora.database]):
     # print the databases (with some config-details) according to the provided commandline
     # parameters.
     data = {'name':    list(map(lambda db: db.name, DBL)),
@@ -125,12 +132,12 @@ def print_db_list(DBL):
             'host':    list(map(lambda db: db.host, DBL)),
             'rac':     list(map(lambda db: db.rac, DBL)),
             'tags':    list(map(lambda db: db.tags, DBL))
-           }
+            }
     df = pd.DataFrame(data)
     print(tabulate(df, headers='keys', tablefmt='presto'))
 
 
-def print_script_list(scriptDir, fname):
+def print_script_list(scriptDir: str, fname: str):
     # print details about configured and existing files inside directory SCRIPT_DIR.
 
     do_regex = False
@@ -150,44 +157,46 @@ def print_script_list(scriptDir, fname):
     df = pd.read_csv(scriptDir+'/scripts.csv', index_col='name')
     if do_regex:
         L = list(filter(lambda f: p.match(f), df.index.tolist()))
-        df = df.filter(items = L, axis=0)
+        df = df.filter(items=L, axis=0)
 
     # Full outer join ...
     jDF = df.join(df_F, how='outer')
-    jDF['status'] = jDF['status'].apply(str)  # Necessary if only values from scripts.csv remain ...
+    # Necessary if only values from scripts.csv remain ...
+    jDF['status'] = jDF['status'].apply(str)
     for f in jDF.index.tolist():
-        if pd.isnull(jDF.at[f,'type']):
-            jDF.at[f,'type'] = ''
-            jDF.at[f,'description'] = ''
-            jDF.at[f,'status'] = 'NO-CONFIG'
-        if pd.isnull(jDF.at[f,'status']):
-            jDF.at[f,'status'] = 'NO-FILE'
+        if pd.isnull(jDF.at[f, 'type']):
+            jDF.at[f, 'type'] = ''
+            jDF.at[f, 'description'] = ''
+            jDF.at[f, 'status'] = 'NO-CONFIG'
+        if pd.isnull(jDF.at[f, 'status']):
+            jDF.at[f, 'status'] = 'NO-FILE'
 
     # Print with reordered columns ...
-    print(tabulate(jDF[["status", "type","description"]].sort_index(), headers='keys', tablefmt='presto'))
+    print(tabulate(jDF[["status", "type", "description"]
+                       ].sort_index(), headers='keys', tablefmt='presto'))
 
 
-def ORAtk_loginfile():
+def ORAtk_loginfile() -> str:
     # This file resides in directory $HOME/sqlplus-logins and can be identified by
     # using environment variables $DBA_DB_NAME and $USER. The name of these login
-    # files always has the pattern <'$USER'-'$DBA_DB_NAME'.sql>.
+    # files always have the pattern <'$USER'-'$DBA_DB_NAME'.sql>.
     path = os.environ['HOME']+'/sqlplus-logins'
     try:
         file = os.environ['USER'] + '-' + os.environ['DBA_DB_NAME'] + '.sql'
     except:
         print("Environment variable $DBA_DB_NAME does not exist. Can't derive login information from directory $HOME/sqlplus-logins!")
         return None
-        
+
     return path + '/' + file
 
 
-def User_Pwd_fromEnv():
+def User_Pwd_fromEnv() -> Tuple[str, str, bool] or None:
     # Parse the loginfile (derived from the current environemnt). Return username
     # and password.
     loginfile = ORAtk_loginfile()
     if not loginfile:
         return None
-    
+
     lines = list(open(loginfile, 'r'))
     connect = [x for x in lines if x.lstrip().startswith('conn')][0]
     words = re.split('[ /@]', ' '.join(connect.split()))
@@ -204,7 +213,7 @@ def User_Pwd_fromEnv():
     return (usr, pwd, sysdba)
 
 
-def identify_user(username, pwd):
+def identify_user(username: str, pwd: str) -> ora.user:
     if username and pwd:
         # Option 1: user and password have been provided via commandline
         return ora.user(username, pwd)
@@ -234,7 +243,7 @@ def identify_user(username, pwd):
                 print("Unable to identify an Oracle username - processing stopped!")
                 exit(1)
 
-    
+
 def generate_FernetKey():
     key = Fernet.generate_key()
     print("Set environment variable ORACMD_KEY to use this key for encrypting passwords.")
@@ -245,7 +254,7 @@ def generate_FernetKey():
     print("")
 
 
-def fernet_key():
+def fernet_key() -> str:
     try:
         return os.environ['ORACMD_KEY'].encode()
     except:
@@ -253,7 +262,7 @@ def fernet_key():
         exit(1)
 
 
-def encrypt_Password(pwd):
+def encrypt_Password(pwd: str):
     if not pwd:
         print("No password provided! (use --pwd)")
         exit(1)

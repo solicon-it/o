@@ -1,9 +1,11 @@
+from typing import List
+
 import os
 import cx_Oracle as ora
 from cryptography.fernet import Fernet
 
 
-def fernet_key():
+def fernet_key() -> str:
     try:
         return os.environ['ORACMD_KEY'].encode()
     except:
@@ -60,20 +62,20 @@ class database:
 
 
 class user:
-    def __init__(self, name=None, pwd=None, sysdba=False):
+    def __init__(self, name: str = None, pwd: str = None, sysdba: bool = False):
         self.name = name
         self.pwd = pwd
         self.sysdba = sysdba
         self.pwd_for_dbs = []
         self.wallet_for_dbs = []
 
-    def set_pwd(self, pwd, dbs):
+    def set_pwd(self, pwd: str, dbs: List[database]):
         self.pwd_for_dbs.append([pwd, dbs])
 
-    def set_wallet(self, tns=None, db=None):
+    def set_wallet(self, tns: str = None, db: database = None):
         self.wallet_for_dbs.append([tns, db])
 
-    def decrypt_Password(self, encPwd):
+    def decrypt_Password(self, encPwd: str) -> str:
         if not encPwd.startswith('fernet:'):
             # Password has been stored in plaintext!
             return encPwd
@@ -84,7 +86,7 @@ class user:
         pwd = fernet.decrypt(encPwd[7:].encode())  # Honor prefix "fernet:" !!!
         return pwd.decode()
 
-    def pwd_for_db(self, db):
+    def pwd_for_db(self, db: database) -> str:
         "return the plaintext password for the provided database."
         if self.pwd:
             return self.pwd
@@ -94,7 +96,7 @@ class user:
                     return self.decrypt_Password(pw[0])
         return None
 
-    def walletTNS_for_db(self, db):
+    def walletTNS_for_db(self, db: database) -> str:
         "return the tns-entry configured for access via wallet for the provided database."
         for tns in self.wallet_for_dbs:
             if db == tns[1]:
@@ -103,7 +105,7 @@ class user:
 
 
 class session:
-    def __init__(self, database, user, verbose=0):
+    def __init__(self, database: database, user: user, verbose: int = 0):
         self.database = database
         self.user = user
         self.verbose = verbose

@@ -1,4 +1,4 @@
-with OBJ (
+with OBJ as (
 select
   owner,count(*) cnt
 from
