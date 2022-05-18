@@ -535,6 +535,7 @@ Per default results are always displayed in your terminal window. With flag "--s
 
 ### Save results into files
 To save data we can choose between those formats:
+
 * csv
 * html
 * parquet (binary format - often used in bigdata setups)
@@ -544,12 +545,24 @@ The output format is identified by the extension of the file you define after fl
 
 An example:
 ```bash
-o df --pdb kb kbo df --pdb kb kb_q -u dbadmin --save users.xlsx
-File 'users.xlsx' created (6 kb).
+o df --pdb kb kbo df --pdb kb kb_q -u dbadmin --save datafiles.xlsx
+File 'datafiles.xlsx' created (6 kb).
 ```
 
 A remark:
 Creating "xslx" files can take quite long! If you save bigger resultsets CSV of PARQUET are good options.
+
+### Dropping unwanted columns before displaying or saving data
+Sometimes it may be useful to remove columns before saving the data for further processing. E.g. column `_db` is a good example.
+"o" provides the flag "--dropcols" for this situation.
+
+An example:
+```bash
+o usr --save users.xlsx -o name --dropcols _db PROFILE
+File 'users.xlsx' created (6 kb).
+```
+
+... creates an excel-file containing user information with database-info and PROFILE data.
 
 
 ## Some remarks about commands in general
@@ -771,7 +784,7 @@ This is quite easy, just define the variable PYENV_ROOT upfront. This defines th
 Typically this is $HOME/.pyenv but you can adjust this.
 
 ```bash
-export PYENV_ROOT="u00/python.pyenv"
+export PYENV_ROOT="u00/python/.pyenv"
 ```
 
 Afterwards just execute:
@@ -817,6 +830,7 @@ alias o='python3 -m o'
 
 ### Reference information
 Further details about how to install python environments and how to work with PYENV can be found here:
+
 * https://realpython.com/intro-to-pyenv/
 * https://github.com/pyenv/pyenv
 
