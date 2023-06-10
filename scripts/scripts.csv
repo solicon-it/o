@@ -1,3 +1,5 @@
 "name","type","description"
+"compare_version.sql","SQL-STMT","Oracle Software version (v$instance) and Oracle database version (dba_registry)."
 "invalid_objects.sql","SQL-STMT","The number of invalid objects per schema (sorted by schemaname)."
 "fra_usage_pct.sql","SQL-STMT","The current size of the fast-recovery-area and some usage information in percent."
+"session_info.sql","SQL-STMT","Session overview combined with process-infos (SPID)."

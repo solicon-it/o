@@ -715,6 +715,23 @@ o par -f name _lm_share_lock_opt --pdb all -u sys -t test
 Already discussed in chapter "Using custom queries".
 
 
+### src
+
+Export all objects (for multiple databases) according to the filter condition you defined. Oracle package DBMS-METADATA is used to export the DDL statements.
+Be aware that this can take quite some time, if you export metadata for many objects!
+
+```bash
+o src --pdb solicon -f owner dbadmin -f name ho
+    | _db     | owner   | type         | name   | filename
+----+---------+---------+--------------+--------+----------------------------------------------------
+  0 | SOLICON | DBADMIN | PACKAGE_BODY | HO     | /home/kurt/tmp/SOLICON.DBADMIN.PACKAGE_BODY.HO.sql
+  1 | SOLICON | DBADMIN | PACKAGE_SPEC | HO     | /home/kurt/tmp/SOLICON.DBADMIN.PACKAGE_SPEC.HO.sql
+```
+
+Currently all files are create in directory `$HOME/tmp`. Generated files always include a headerline containing the creation time, the version of "o" and
+the database from where this object was extracted. Each object is placed in a separate file.
+
+
 ### ts
 
 List tablespace infos.
@@ -1085,6 +1102,7 @@ tabulate>=0.8.9
 ```bash
 pip install pandas
 pip install cx_Oracle
+pip install sqlalchemy
 pip install cryptography
 pip install tabulate
 pip install pyarrow

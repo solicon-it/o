@@ -2,6 +2,9 @@ from typing import List
 
 import os
 import cx_Oracle as ora
+from sqlalchemy.engine import create_engine
+from sqlalchemy.engine.url import URL
+
 from cryptography.fernet import Fernet
 
 
@@ -69,6 +72,9 @@ class user:
         self.pwd_for_dbs = []
         self.wallet_for_dbs = []
 
+        if self.name == 'SYS':
+            self.sysdba = True
+
     def set_pwd(self, pwd: str, dbs: List[database]):
         self.pwd_for_dbs.append([pwd, dbs])
 
@@ -113,6 +119,59 @@ class session:
     def openConnection(self):
         # Database connections are opened within commands. Exception handling happens inside the
         # main processing loop in 'app.py'.
+        # Recent versions of pandas demand for "SqlAlchemy"! So this method uses SqlAlchemy to
+        # create database connects and also provides SqlAlchemy connection objects.
+
+        if self.user.name == None and self.user.sysdba == True:
+            if self.verbose >= 2:
+                print("{}: connect as sysdba (using os-group 'dba')".format(self.database.name))
+            # connect as SYS with osuser-privs (dba) and ORACLE_SID setup ...
+            self.connection = ora.connect("/", mode=ora.SYSDBA)
+        else:
+            pwd = self.user.pwd_for_db(self.database)
+            wallet_tns = self.user.walletTNS_for_db(self.database)
+
+            if not pwd and not wallet_tns:
+                raise Exception(
+                    "No password for {}@{} available!".format(self.user.name, self.database.service_name or self.database.tns))
+
+            if pwd:
+                if self.verbose >= 2:
+                    print(
+                        "connect to {} with provided username ({}) & password.".format(self.database.name, self.user.name))
+
+                if self.user.sysdba:
+                    self.connection = ora.connect(
+                        self.user.name, pwd, dsn=self.database.dsn(), mode=ora.SYSDBA)
+                else:
+                    e = create_engine(
+                                "oracle+cx_oracle://" + self.user.name + ":" + pwd + "@" +self.database.dsn())
+                    self.connection = e.connect()
+
+            if wallet_tns:
+                usr = '/@' + wallet_tns
+                if self.verbose >= 2:
+                    print(
+                        "using TNS-entry '{}' with wallet configuration (user '{}').".format(self.database.name, self.user.name))
+
+                if self.user.sysdba:
+                    if self.verbose >= 2:
+                        print("connect as SYSDBA")
+                    url = str(URL('oracle+cx_oracle', usr)) + '?mode=SYSDBA'
+                    e = create_engine(url)
+                    self.connection = e.connect()
+                else:
+                    if self.verbose >= 2:
+                        print("connect normally")
+                    e = create_engine(URL('oracle+cx_oracle', usr))
+                    self.connection = e.connect()
+
+
+    def openConnection_cx_ora(self):
+        # Database connections are opened within commands. Exception handling happens inside the
+        # main processing loop in 'app.py'.
+        # This version uses the original cx_oracle way to create database sessions. The connection
+        # objects are "cx_oracle" flavour.
 
         if self.user.name == None and self.user.sysdba == True:
             if self.verbose >= 2:

@@ -30,8 +30,10 @@ import pyarrow.parquet as pq
 #       Bugfix: add WITH-Clause in "query.py"
 # 0.4.6 Minimize Oracle error messages during "non verbose" processing
 # 0.4.7 Dropping columns when displaying or exporting dataframes.
+# 0.4.8 use sqlalchemy when connecting to Oracle (due to Pandas requirement).
+# 0.4.9 added command "src"
 
-g_VERSION = '0.4.7'
+g_VERSION = '0.4.9'
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.WARN)
 
@@ -50,7 +52,7 @@ A toolkit to work efficiently with Oracle databases direct in the Linux commandl
 multiple basic commands (e.g. "usr") are implemented to support DBAs in their daily work.
 """)
     parser.add_argument("command", nargs='?', default=None,
-                        help="allowed are: 'blocks', 'encrypt', 'df', 'find', 'genkey', 'list', 'par', 'query', 'ts', 'usr', ...")
+                        help="allowed are: 'blocks', 'encrypt', 'df', 'find', 'genkey', 'list', 'par', 'query', 'src', 'ts', 'usr', ...")
 
     parser.add_argument("-v", "--version", action="store_true",
                         help="show version information.")
@@ -82,7 +84,7 @@ Use 'ALL', if you want to execute a command on all known pluggable databases."""
     parser.add_argument("-u", "--usr", dest="usr", action='store',
                         help="The Oracle username which shall execute the given command.")
     parser.add_argument("-p", "--pwd", dest="pwd", action='store',
-                        help="The Oracle username which shall execute the given command.")
+                        help="The password of the provided Oracle username.")
 
     # custom queries ...
     query_group = parser.add_mutually_exclusive_group(required=False)
@@ -191,7 +193,7 @@ def run():
         print("V " + g_VERSION + " - (c) solicon IT GmbH 2021,2022")
         exit(0)
 
-    if args.command not in ['blocks', 'df', 'encrypt', 'find', 'genkey', 'list', 'par', 'query', 'ts', 'usr']:
+    if args.command not in ['blocks', 'df', 'encrypt', 'find', 'genkey', 'list', 'par', 'query', 'ts', 'src', 'usr']:
         print(f"[{args.command}] is not a valid command!")
         exit(1)
 

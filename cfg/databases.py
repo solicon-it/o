@@ -18,6 +18,12 @@ _v = '19.9.0'
 # ("None" means: check sub-directory "scripts")
 _SQL_SCRIPT_DIR = None
 
+# Adjust this variable, if you want to use a custom directory for storing generated
+# DDL-scripts!
+# ("None" means: check sub-directory "$HOME/tmp")
+_SQL_OUTPUT_DIR = None
+
+
 # Databases and Users MUST NOT have leading "_" !!!
 
 KB = ora.database(name='KB',     host='vm002',
